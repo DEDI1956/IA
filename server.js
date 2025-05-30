@@ -31,5 +31,6 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 10000;
+// PENTING: pakai PORT dari environment variable!
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Proxy server listening on port ${PORT}`));
