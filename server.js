@@ -7,8 +7,10 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Pastikan kamu sudah mengatur OPENAI_API_KEY di Railway Environment Variable!
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
+// Endpoint utama proxy
 app.post('/api/chat', async (req, res) => {
   try {
     const { messages } = req.body;
@@ -19,18 +21,17 @@ app.post('/api/chat', async (req, res) => {
         'Authorization': `Bearer ${OPENAI_API_KEY}`
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages,
-        store: true
+        model: 'gpt-4o',
+        messages
       })
     });
     const data = await response.json();
     res.json(data);
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: 'Server error: ' + err.message });
   }
 });
 
-// Wajib: Pakai PORT dari environment (Railway, Render, dsb)
+// Jalankan server di Railway (PORT env) atau lokal (8080)
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Proxy server listening on port ${PORT}`));
