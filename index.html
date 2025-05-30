@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Chat OpenAI Proxy</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 30px; }
+    #chat { width: 400px; margin-bottom: 10px; }
+    #messages { border: 1px solid #ccc; padding: 10px; height: 200px; overflow-y: auto; margin-bottom: 10px; }
+    #loading { color: #888; }
+  </style>
+</head>
+<body>
+  <h2>ChatGPT via Railway Proxy</h2>
+  <div id="messages"></div>
+  <form id="chat">
+    <input type="text" id="userMessage" placeholder="Tulis pesan..." style="width:300px;">
+    <button type="submit">Kirim</button>
+    <span id="loading" style="display:none">Mengirim...</span>
+  </form>
+  <script>
+    const backendURL = "https://vpcj-6jd5.up.railway.app/api/chat";
+    const messages = [];
+    const messagesDiv = document.getElementById('messages');
+    const form = document.getElementById('chat');
+    const userMessageInput = document.getElementById('userMessage');
+    const loadingSpan = document.getElementById('loading');
+
+    function renderMessages() {
+      messagesDiv.innerHTML = messages.map(m => `<b>${m.role}:</b> ${m.content}`).join("<br>");
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const userContent = userMessageInput.value.trim();
+      if (!userContent) return;
+      messages.push({ role: "user", content: userContent });
+      renderMessages();
+      userMessageInput.value = '';
+      loadingSpan.style.display = 'inline';
+
+      try {
+        const response = await fetch(backendURL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages })
+        });
+        const data = await response.json();
+        const aiReply = data.choices?.[0]?.message?.content || "Tidak ada balasan dari AI.";
+        messages.push({ role: "assistant", content: aiReply });
+        renderMessages();
+      } catch (err) {
+        messages.push({ role: "assistant", content: "Error: " + err.message });
+        renderMessages();
+      } finally {
+        loadingSpan.style.display = 'none';
+      }
+    });
+
+    renderMessages();
+  </script>
+</body>
+</html>
