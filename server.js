@@ -31,6 +31,6 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-// PENTING: pakai PORT dari environment variable!
+// Wajib: Pakai PORT dari environment (Railway, Render, dsb)
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => console.log(`Proxy server listening on port ${PORT}`));
