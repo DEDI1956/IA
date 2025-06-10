@@ -1,6 +1,6 @@
-import TelegramBot from 'node-telegram-bot-api';
-import fetch from 'node-fetch';
-import fs from 'fs';
+const TelegramBot = require('node-telegram-bot-api');
+const fetch = require('node-fetch');
+const fs = require('fs');
 
 // ---- CONFIG ----
 const config = JSON.parse(fs.readFileSync('config.json'));
@@ -11,7 +11,7 @@ const API_BASE = config.CLOUDFLARE_API_ENDPOINT || "https://api.cloudflare.com/c
 const bot = new TelegramBot(TOKEN, { polling: true });
 
 // ---- STATE ----
-const userState = {}; // { [chatId]: { step, data } }
+const userState = {}; // { [chatId]: { step, ... } }
 const userData = {};  // { [chatId]: { token, account_id, zone_id } }
 
 // ---- MENU UTAMA ----
@@ -29,6 +29,9 @@ function mainMenu() {
         ],
         [
           { text: "🗑️ Delete Worker", callback_data: "delete_worker" },
+          { text: "🔍 List Worker KV", callback_data: "list_worker_kv" }
+        ],
+        [
           { text: "🔒 Logout", callback_data: "logout" }
         ]
       ]
@@ -48,10 +51,11 @@ Bot ini membantumu mengelola Cloudflare Worker langsung dari Telegram 🚀
 • 📝 Lihat daftar Worker aktif
 • 🗑️ Hapus Worker
 • 🔑 Kelola Binding KV Storage (tambah & hapus)
+• 🔍 Lihat Worker yang sudah ter-binding KV
 • 🔒 Logout & reset akun Cloudflare
 
 📋 *Petunjuk:*
-1. Siapkan API Token & Account ID Cloudflare (gunakan menu jika belum).
+1. Siapkan API Token & Account ID Cloudflare (akan diminta saat pertama kali).
 2. Pilih menu sesuai kebutuhan di bawah.
 3. Ikuti instruksi bot saat menambah/deploy/binding Worker.
 
@@ -76,21 +80,23 @@ bot.onText(/\/start/, (msg) => {
     parse_mode: "Markdown",
     ...mainMenu()
   });
-  // Prompt input akun jika belum ada
   if (!getUser(chatId).token) {
-    bot.sendMessage(chatId, "🔑 Silakan masukkan *API Token* Cloudflare:", { parse_mode: "Markdown" });
+    bot.sendMessage(chatId, "🔑 Silakan masukkan *API Token* Cloudflare kamu:", { parse_mode: "Markdown" });
     userState[chatId] = { step: "await_token" };
   }
 });
 
 // ---- INPUT API TOKEN, ACCOUNT ID, ZONE ID ----
 bot.on('message', async (msg) => {
+  // Hanya proses pesan text dari user, bukan dari group, dan bukan reply bot
+  if (!msg.text || msg.text.startsWith('/')) return;
   const chatId = msg.chat.id;
   if (!userState[chatId] || !userState[chatId].step) return;
   const step = userState[chatId].step;
   const text = msg.text.trim();
   const user = getUser(chatId);
 
+  // 1. Setup Akun
   if (step === "await_token") {
     user.token = text;
     userState[chatId] = { step: "await_account_id" };
@@ -110,7 +116,7 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // Deploy Worker - Step by Step
+  // 2. Deploy Worker - Step by Step
   if (step === "deploy_worker_name") {
     userState[chatId] = { step: "deploy_worker_code", worker_name: text };
     bot.sendMessage(chatId, "✏️ Kirim kode JavaScript *Worker* kamu:", { parse_mode: "Markdown" });
@@ -123,7 +129,7 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // Binding KV - Step by Step
+  // 3. Binding KV - Step by Step
   if (step === "binding_kv_worker") {
     userState[chatId] = { step: "binding_kv_var", worker_name: text };
     bot.sendMessage(chatId, "🔑 Masukkan *nama variable binding* (contoh: MY_KV):", { parse_mode: "Markdown" });
@@ -141,7 +147,7 @@ bot.on('message', async (msg) => {
     return;
   }
 
-  // Unbinding KV - Step by Step
+  // 4. Unbind KV - Step by Step
   if (step === "unbind_kv_worker") {
     userState[chatId] = { step: "unbind_kv_binding", worker_name: text };
     // Ambil daftar binding
@@ -210,20 +216,26 @@ bot.on('callback_query', async (query) => {
   // Binding KV
   if (data === "binding_kv") {
     userState[chatId] = { step: "binding_kv_worker" };
-    bot.sendMessage(chatId, "🏷️ Masukkan *nama Worker* yang ingin di-binding:", { parse_mode: "Markdown" });
+    bot.sendMessage(chatId, "🏷️ Masukkan *nama Worker* yang ingin di-binding KV:", { parse_mode: "Markdown" });
     return bot.answerCallbackQuery(query.id);
   }
 
   // Unbind KV
   if (data === "unbind_kv") {
     userState[chatId] = { step: "unbind_kv_worker" };
-    bot.sendMessage(chatId, "🏷️ Masukkan *nama Worker* yang ingin di-unbinding:", { parse_mode: "Markdown" });
+    bot.sendMessage(chatId, "🏷️ Masukkan *nama Worker* yang ingin di-unbinding KV:", { parse_mode: "Markdown" });
     return bot.answerCallbackQuery(query.id);
   }
   if (data.startsWith("unbind_kv_confirm:")) {
     const [, worker_name, binding_name] = data.split(":");
     const ok = await unbindingKV(chatId, user, worker_name, binding_name);
     bot.sendMessage(chatId, ok ? `✅ Binding *${binding_name}* berhasil dihapus dari Worker *${worker_name}*.` : `❌ Gagal hapus binding.`);
+    return bot.answerCallbackQuery(query.id);
+  }
+
+  // List Worker KV
+  if (data === "list_worker_kv") {
+    await listWorkerKV(chatId, user);
     return bot.answerCallbackQuery(query.id);
   }
 
@@ -402,5 +414,51 @@ async function unbindingKV(chatId, user, worker_name, binding_name) {
     return !!putData.success;
   } catch {
     return false;
+  }
+}
+
+// ---- LIST WORKER YANG ADA KV BINDING ----
+async function listWorkerKV(chatId, user) {
+  if (!user.token || !user.account_id) {
+    bot.sendMessage(chatId, "⚠️ Kamu belum setup akun Cloudflare. Gunakan /start dulu.");
+    return;
+  }
+  const url = `${API_BASE}/${user.account_id}/workers/scripts`;
+  try {
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { "Authorization": `Bearer ${user.token}` }
+    });
+    const data = await res.json();
+    if (!data.success) return bot.sendMessage(chatId, "❌ Gagal ambil daftar worker.");
+    if (!data.result.length) return bot.sendMessage(chatId, "📭 Belum ada worker di akun Cloudflare-mu.");
+
+    let reply = `🔍 *Daftar Worker yang punya Binding KV:*\n`;
+    let found = false;
+    for (const w of data.result) {
+      // Ambil detail worker (bindings)
+      const detailUrl = `${API_BASE}/${user.account_id}/workers/scripts/${w.id}`;
+      try {
+        const resDetail = await fetch(detailUrl, {
+          method: 'GET',
+          headers: { "Authorization": `Bearer ${user.token}` }
+        });
+        const detail = await resDetail.json();
+        if (detail.success && detail.result && detail.result.bindings) {
+          const kvBindings = detail.result.bindings.filter(b => b.type === "kv_namespace");
+          if (kvBindings.length) {
+            found = true;
+            reply += `\n• *${w.id}*:\n  - ${kvBindings.map(b => `\`${b.name}\``).join('\n  - ')}\n`;
+          }
+        }
+      } catch {}
+    }
+    if (!found) {
+      bot.sendMessage(chatId, "📭 Tidak ada worker yang punya binding KV.");
+    } else {
+      bot.sendMessage(chatId, reply, { parse_mode: "Markdown" });
+    }
+  } catch (e) {
+    bot.sendMessage(chatId, "❌ Error koneksi ke Cloudflare API.");
   }
 }
