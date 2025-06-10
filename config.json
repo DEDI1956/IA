@@ -1,5 +1,5 @@
 {
   "TELEGRAM_BOT_TOKEN": "7632906804:AAFz5ah7aWYDk5Exr9CdtMvfOBd_ofUoFAU",
-  "ADMIN_ID": 7857630943,
+  "NOTIF_GROUP_ID": -1002747373907,
   "CLOUDFLARE_API_ENDPOINT": "https://api.cloudflare.com/client/v4/accounts"
 }
