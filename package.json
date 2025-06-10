@@ -6,5 +6,8 @@
   "dependencies": {
     "node-telegram-bot-api": "^0.61.0",
     "node-fetch": "^2.6.7"
+  },
+  "scripts": {
+    "start": "node bot.js"
   }
 }
