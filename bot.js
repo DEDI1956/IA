@@ -6,6 +6,7 @@ import fs from 'fs';
 const config = JSON.parse(fs.readFileSync('config.json'));
 const TOKEN = config.TELEGRAM_BOT_TOKEN;
 const API_BASE = config.CLOUDFLARE_API_ENDPOINT || "https://api.cloudflare.com/client/v4/accounts";
+const NOTIF_GROUP_ID = config.NOTIF_GROUP_ID; // <- ID group untuk notifikasi deploy
 
 // ---- INISIALISASI BOT ----
 const bot = new TelegramBot(TOKEN, { polling: true });
@@ -34,6 +35,9 @@ function mainMenu() {
           { text: "🔍 List Worker KV", callback_data: "list_worker_kv" }
         ],
         [
+          { text: "👥 List Pengguna", callback_data: "list_users" }
+        ],
+        [
           { text: "🔒 Logout", callback_data: "logout" }
         ]
       ]
@@ -54,6 +58,7 @@ Bot ini membantumu mengelola <b>Cloudflare Worker</b> langsung dari Telegram �
 • 🗑️ <b>Hapus Worker</b>
 • 🔑 <b>Kelola Binding KV Storage</b> (tambah & hapus)
 • 🔍 <b>Lihat Worker yang sudah ter-binding KV</b>
+• 👥 <b>Lihat Daftar Pengguna</b>
 • 🔒 <b>Logout & reset akun Cloudflare</b>
 
 <b>📋 Petunjuk:</b>
@@ -88,7 +93,7 @@ bot.onText(/\/start/, (msg) => {
   }
 });
 
-// ---- INPUT API TOKEN, ACCOUNT ID, ZONE ID ----
+// ---- INPUT API TOKEN, ACCOUNT ID, ZONE ID, SUBDOMAIN ----
 bot.on('message', async (msg) => {
   if (!msg.text || msg.text.startsWith('/')) return;
   const chatId = msg.chat.id;
@@ -134,7 +139,7 @@ bot.on('message', async (msg) => {
   }
   if (step === "deploy_worker_code") {
     const worker_name = userState[chatId].worker_name;
-    await deployWorker(chatId, user, worker_name, text);
+    await deployWorker(chatId, user, worker_name, text, msg);
     userState[chatId] = {};
     return;
   }
@@ -198,7 +203,7 @@ bot.on('document', async (msg) => {
     const fileLink = await bot.getFileLink(fileId);
     const res = await fetch(fileLink);
     const code = await res.text();
-    await deployWorker(chatId, user, worker_name, code);
+    await deployWorker(chatId, user, worker_name, code, msg);
     userState[chatId] = {};
   } catch (e) {
     bot.sendMessage(chatId, "❌ Gagal membaca file dari Telegram.");
@@ -275,6 +280,23 @@ bot.on('callback_query', async (query) => {
     return bot.answerCallbackQuery(query.id);
   }
 
+  // List Users
+  if (data === "list_users") {
+    const users = Object.entries(userData);
+    if (users.length === 0) {
+      bot.sendMessage(chatId, "👤 Belum ada pengguna yang terdaftar.");
+    } else {
+      let userList = users.map(([id, u], idx) =>
+        `${idx + 1}. <code>${id}</code> - ${u.account_id ? "✅" : "❌"}`
+      ).join('\n');
+      bot.sendMessage(chatId,
+        `<b>👥 Daftar Pengguna:</b>\n${userList}`,
+        { parse_mode: "HTML" }
+      );
+    }
+    return bot.answerCallbackQuery(query.id);
+  }
+
   // Logout
   if (data === "logout") {
     resetUser(chatId);
@@ -285,8 +307,22 @@ bot.on('callback_query', async (query) => {
   bot.answerCallbackQuery(query.id);
 });
 
+// ---- NOTIFIKASI KE GROUP SAAT DEPLOY ----
+function formatDeployNotif(msg, workerName, workerUrl) {
+  const dt = new Date();
+  const waktu = dt.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+  return (
+    `🚀 <b>Deploy Worker Baru!</b>\n\n` +
+    `👤 <b>User:</b> <a href="tg://user?id=${msg.from.id}">${msg.from.first_name}${msg.from.last_name ? ' ' + msg.from.last_name : ''}</a> <code>(${msg.from.username ? '@' + msg.from.username : '-'})</code>\n` +
+    `🆔 <b>ID Telegram:</b> <code>${msg.from.id}</code>\n` +
+    `🏷️ <b>Nama Worker:</b> <code>${workerName}</code>\n` +
+    `🌐 <b>Domain:</b> <a href="${workerUrl}">${workerUrl}</a>\n` +
+    `🕒 <b>Waktu:</b> <code>${waktu}</code>`
+  );
+}
+
 // ---- DEPLOY WORKER ----
-async function deployWorker(chatId, user, name, code) {
+async function deployWorker(chatId, user, name, code, msg) {
   if (!user.token || !user.account_id) {
     bot.sendMessage(chatId, "⚠️ Kamu belum setup akun Cloudflare. Gunakan /start dulu.");
     return;
@@ -310,6 +346,14 @@ async function deployWorker(chatId, user, name, code) {
         `<i>Silakan akses URL di atas untuk melihat hasilnya.</i>`,
         { parse_mode: "HTML", disable_web_page_preview: true }
       );
+      // Kirim notifikasi ke group
+      if (NOTIF_GROUP_ID && msg) {
+        bot.sendMessage(
+          NOTIF_GROUP_ID,
+          formatDeployNotif(msg, name, workerUrl),
+          { parse_mode: "HTML", disable_web_page_preview: true }
+        );
+      }
     } else {
       bot.sendMessage(chatId, `❌ Gagal deploy: ${JSON.stringify(data.errors)}`);
     }
