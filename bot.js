@@ -1,6 +1,6 @@
-const TelegramBot = require('node-telegram-bot-api');
-const fetch = require('node-fetch');
-const fs = require('fs');
+import TelegramBot from 'node-telegram-bot-api';
+import fetch from 'node-fetch';
+import fs from 'fs';
 
 // ---- CONFIG ----
 const config = JSON.parse(fs.readFileSync('config.json'));
@@ -88,7 +88,6 @@ bot.onText(/\/start/, (msg) => {
 
 // ---- INPUT API TOKEN, ACCOUNT ID, ZONE ID ----
 bot.on('message', async (msg) => {
-  // Hanya proses pesan text dari user, bukan dari group, dan bukan reply bot
   if (!msg.text || msg.text.startsWith('/')) return;
   const chatId = msg.chat.id;
   if (!userState[chatId] || !userState[chatId].step) return;
