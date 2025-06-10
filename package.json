@@ -1,15 +1,10 @@
 {
-  "name": "openai-proxy",
+  "name": "cloudflare-worker-bot",
   "version": "1.0.0",
-  "main": "server.js",
-  "type": "commonjs",
-  "scripts": {
-    "start": "node server.js"
-  },
+  "main": "bot.js",
+  "type": "module",
   "dependencies": {
-    "cors": "^2.8.5",
-    "dotenv": "^16.0.3",
-    "express": "^4.18.2",
+    "node-telegram-bot-api": "^0.61.0",
     "node-fetch": "^2.6.7"
   }
 }
